@@ -5,3 +5,5 @@
 3. gambar e kudu format bmp (wes tak kei 1 nek arep nambah yo rpp)
 
 4. kolom seng bawah gur nggo nampilke pesan seko database
+
+5. login admin123
