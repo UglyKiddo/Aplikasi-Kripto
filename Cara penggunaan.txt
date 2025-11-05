@@ -1,0 +1,7 @@
+1. nek arep nyisipke pesan neng stego kudu input text neng atas trs lagi milih menu sisipkan pesan ke gambar
+
+2. fitur sisipkan pesan ke gambar iso digunakke nek durung nganggo menu lain e, nek gunakke fitur sisipkan pesan setelah enkripsi teks ngko pesan e ra berhasil keinput neng gambar alias kosong
+
+3. gambar e kudu format bmp (wes tak kei 1 nek arep nambah yo rpp)
+
+4. kolom seng bawah gur nggo nampilke pesan seko database
