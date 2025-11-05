@@ -66,20 +66,27 @@ def encrypt_message():
     msg = entry_msg.get("1.0", tk.END).strip()
     if not msg:
         return messagebox.showwarning("Error", "Masukkan pesan!")
+
     xor_res = xor_cipher(msg.encode(), 23)
-    save_message_plain(DB_PATH, xor_res.decode(errors="ignore"), key)
+    b64_data = b64encode(xor_res).decode()  # ubah hasil XOR ke base64 agar aman disimpan
+    save_message_plain(DB_PATH, b64_data, key)
+
     entry_msg.delete("1.0", tk.END)
-    messagebox.showinfo("Sukses", "Pesan terenkripsi dan disimpan")
+    messagebox.showinfo("Sukses", "Pesan terenkripsi dan disimpan di database")
+
 
 def show_messages():
-    data = read_and_decrypt_messages(DB_PATH, key)
+    data = read_and_decrypt_messages(DB_PATH, key)  # hasil AES decrypt
     output.delete("1.0", tk.END)
-    for dec in data:
+
+    for b64_data in data:
         try:
-            final = xor_cipher(dec.encode(), 23).decode(errors="ignore")
-            output.insert(tk.END, final + "\n\n")
+            xor_bytes = b64decode(b64_data)          # decode dari base64
+            plain = xor_cipher(xor_bytes, 23).decode(errors="ignore")  # XOR decrypt
+            output.insert(tk.END, plain + "\n\n")    # tampilkan plaintext
         except Exception as e:
             output.insert(tk.END, f"[Gagal dekripsi: {e}]\n\n")
+
 
 def encrypt_file_gui():
     f = filedialog.askopenfilename()
@@ -103,12 +110,35 @@ def decrypt_file_gui():
 def stego_encode_gui():
     img = filedialog.askopenfilename(filetypes=[("BMP Images", "*.bmp")])
     msg = entry_msg.get("1.0", tk.END).strip()
+
+    # Jika textbox kosong, ambil pesan terakhir dari DB (jika ada)
+    if not msg:
+        try:
+            stored = read_and_decrypt_messages(DB_PATH, key)  # list of plaintexts stored
+            if stored:
+                last = stored[-1]            # string yang disimpan; di encrypt_message kita simpan b64(xor)
+                try:
+                    raw = b64decode(last)   # bytes = xor(msg)
+                    original_bytes = xor_cipher(raw, 23)  # bytes = original plaintext
+                    # coba decode ke str; kalau gagal, kirim bytes langsung ke stego (stego menerima bytes)
+                    try:
+                        msg = original_bytes.decode('utf-8')
+                    except UnicodeDecodeError:
+                        msg = original_bytes
+                except Exception:
+                    # jika bukan base64 (mis. pesan disimpan manual), fallback
+                    msg = last
+        except Exception:
+            msg = ""
+
     if not img or not msg:
-        return
-    out = "hasil_stego.bmp"
+        return messagebox.showwarning("Error", "Pilih gambar dan/atau isi pesan!")
+
+    out_default = "hasil_stego.bmp"
     try:
-        encode_lsb(img, msg, out)
-        messagebox.showinfo("Steganografi", f"Pesan disisipkan ke {out}")
+        out_real = encode_lsb(img, msg, out_default)  # encode_lsb mengembalikan nama file
+        root.update_idletasks()
+        messagebox.showinfo("Steganografi", f"Pesan disisipkan ke {out_real}")
         entry_msg.delete("1.0", tk.END)
     except Exception as e:
         messagebox.showerror("Error", f"Gagal menyisipkan: {e}")

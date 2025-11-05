@@ -3,13 +3,11 @@ import os
 
 def encode_lsb(image_path, message, output_path="hasil_stego.bmp"):
     img = Image.open(image_path)
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-
-    binary = ''.join(format(ord(i), '08b') for i in message) + '1111111111111110'
-    w, h = img.size
+    img = img.convert("RGB")
     pixels = img.load()
+    w, h = img.size
 
+    binary = ''.join(format(byte, '08b') for byte in message.encode('utf-8')) + '1111111111111110'
     if len(binary) > w * h * 3:
         raise ValueError("Pesan terlalu panjang untuk gambar ini.")
 
@@ -36,19 +34,18 @@ def encode_lsb(image_path, message, output_path="hasil_stego.bmp"):
         if idx >= len(binary):
             break
 
-    img.save(new_output, format="BMP")
+    img.save(new_output, format="BMP", bits=24)
+    img.close()
     return new_output
 
 
 def decode_lsb(image_path):
     img = Image.open(image_path)
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-
+    img = img.convert("RGB")
     pixels = img.load()
     w, h = img.size
-    binary = ""
 
+    binary = ""
     for y in range(h):
         for x in range(w):
             r, g, b = pixels[x, y]
@@ -57,6 +54,11 @@ def decode_lsb(image_path):
             binary += str(b & 1)
             if binary.endswith('1111111111111110'):
                 binary = binary[:-16]
-                chars = [binary[i:i+8] for i in range(0, len(binary), 8)]
-                return ''.join(chr(int(c, 2)) for c in chars)
+                data = bytearray()
+                for i in range(0, len(binary), 8):
+                    data.append(int(binary[i:i+8], 2))
+                try:
+                    return data.decode('utf-8')
+                except UnicodeDecodeError:
+                    return data.decode('latin1')
     return ""
