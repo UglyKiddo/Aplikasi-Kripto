@@ -1,14 +1,31 @@
-import sqlite3
+import mysql.connector
 import os
 import base64
+import hashlib
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+# -------------------------------------------------
+# MYSQL CONFIG
+# -------------------------------------------------
+MYSQL_CONFIG = {
+    "host": "localhost",
+    "user": "root",
+    "password": "",
+    "database": "kriptografi"
+}
 
-def derive_key(password: str, salt: bytes = None, iterations: int = 200_000) -> tuple[bytes, bytes]:
+DB_NAME = "kriptografi"
+
+
+# -------------------------------------------------
+# KEY DERIVATION
+# -------------------------------------------------
+def derive_key(password: str, salt: bytes = None, iterations: int = 200_000):
     if salt is None:
         salt = os.urandom(16)
+
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -18,72 +35,126 @@ def derive_key(password: str, salt: bytes = None, iterations: int = 200_000) -> 
     key = kdf.derive(password.encode())
     return key, salt
 
+
+# -------------------------------------------------
+# AES-GCM
+# -------------------------------------------------
 def aesgcm_encrypt(plaintext: bytes, key: bytes) -> str:
     aesgcm = AESGCM(key)
-    nonce = os.urandom(12)  # 96-bit recommended for GCM
-    ct = aesgcm.encrypt(nonce, plaintext, associated_data=None)
-    payload = nonce + ct
-    return base64.b64encode(payload).decode()
+    nonce = os.urandom(12)
+    ct = aesgcm.encrypt(nonce, plaintext, None)
+    return base64.b64encode(nonce + ct).decode()
+
 
 def aesgcm_decrypt(b64_payload: str, key: bytes) -> bytes:
-    payload = base64.b64decode(b64_payload)
-    nonce = payload[:12]
-    ct = payload[12:]
+    data = base64.b64decode(b64_payload)
+    nonce = data[:12]
+    ct = data[12:]
     aesgcm = AESGCM(key)
-    return aesgcm.decrypt(nonce, ct, associated_data=None)
-
-import sqlite3
-
-def init_db(db_path="secure.db"):
-    with sqlite3.connect(db_path) as conn:
-        c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                data TEXT NOT NULL
-            )
-        """)
-        conn.commit()
-    print(f"📦 Database siap digunakan di: {db_path}")
+    return aesgcm.decrypt(nonce, ct, None)
 
 
-def save_message_plain(db_path: str, plaintext: str, key: bytes):
-    encrypted_b64 = aesgcm_encrypt(plaintext.encode(), key)
-    with sqlite3.connect(db_path) as conn:
-        c = conn.cursor()
-        c.execute("INSERT INTO messages (data) VALUES (?)", (encrypted_b64,))
-        conn.commit()
+# -------------------------------------------------
+# AUTO CREATE DATABASE + TABLE
+# -------------------------------------------------
+def init_db():
+    conn = mysql.connector.connect(
+        host=MYSQL_CONFIG["host"],
+        user=MYSQL_CONFIG["user"],
+        password=MYSQL_CONFIG["password"],
+    )
+    c = conn.cursor()
+    c.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
+    conn.commit()
+    conn.close()
+
+    conn = mysql.connector.connect(**MYSQL_CONFIG)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            data TEXT NOT NULL
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(255) UNIQUE,
+            password_hash VARCHAR(128)
+        )
+    """)
+    conn.commit()
+    conn.close()
 
 
-def read_and_decrypt_messages(db_path: str, key: bytes) -> list[str]:
-    results = []
-    with sqlite3.connect(db_path) as conn:
-        c = conn.cursor()
-        c.execute("SELECT data FROM messages ORDER BY id ASC")
-        rows = c.fetchall()
-    for (b64data,) in rows:
+# -------------------------------------------------
+# HELPER: SHA3-256 password hash
+# -------------------------------------------------
+def sha3_hash_password(password: str) -> str:
+    return hashlib.sha3_256(password.encode()).hexdigest()
+
+
+# -------------------------------------------------
+# REGISTER USER (uses SHA3-256 for passwords)
+# -------------------------------------------------
+def register_user(username: str, password: str) -> bool:
+    conn = mysql.connector.connect(**MYSQL_CONFIG)
+    c = conn.cursor()
+    c.execute("SELECT id FROM users WHERE username=%s", (username,))
+    if c.fetchone() is not None:
+        conn.close()
+        return False
+
+    pw_hash = sha3_hash_password(password)
+    c.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)",
+              (username, pw_hash))
+    conn.commit()
+    conn.close()
+    return True
+
+
+# -------------------------------------------------
+# LOGIN USER (verify SHA3-256)
+# -------------------------------------------------
+def login_user(username: str, password: str) -> bool:
+    conn = mysql.connector.connect(**MYSQL_CONFIG)
+    c = conn.cursor()
+    c.execute("SELECT password_hash FROM users WHERE username=%s", (username,))
+    row = c.fetchone()
+    conn.close()
+    if row is None:
+        return False
+    stored_hash = row[0]
+    return sha3_hash_password(password) == stored_hash
+
+
+# -------------------------------------------------
+# INSERT - AES GCM (messages stored encrypted)
+# -------------------------------------------------
+def save_message_plain(plaintext_b64: str, key: bytes):
+    encrypted = aesgcm_encrypt(plaintext_b64.encode(), key)
+    conn = mysql.connector.connect(**MYSQL_CONFIG)
+    c = conn.cursor()
+    c.execute("INSERT INTO messages (data) VALUES (%s)", (encrypted,))
+    conn.commit()
+    conn.close()
+
+
+# -------------------------------------------------
+# READ & DECRYPT
+# -------------------------------------------------
+def read_and_decrypt_messages(key: bytes):
+    conn = mysql.connector.connect(**MYSQL_CONFIG)
+    c = conn.cursor()
+    c.execute("SELECT data FROM messages ORDER BY id ASC")
+    rows = c.fetchall()
+    conn.close()
+
+    hasil = []
+    for (ciphertext,) in rows:
         try:
-            pt = aesgcm_decrypt(b64data, key).decode()
-            results.append(pt)
+            pt = aesgcm_decrypt(ciphertext, key)
+            hasil.append(pt.decode())
         except Exception as e:
-            # Jika dekripsi gagal, tambahkan placeholder atau lewati
-            results.append(f"[DECRYPTION_FAILED: {e}]")
-    return results
-
-
-if __name__ == "__main__":
-    DB = "secure.db"
-    init_db(DB)
-
-    # Opsi: derive key dari password (lebih aman daripada menyimpan key mentah)
-    password = "supersecretpassword"
-    key, salt = derive_key(password)  # simpan salt jika ingin verifikasi/dekripsi nanti
-
-    # Simpan pesan terenkripsi
-    save_message_plain(DB, "Halo, ini pesan rahasia 1", key)
-    save_message_plain(DB, "Pesan rahasia 2", key)
-
-    # Baca & dekripsi
-    messages = read_and_decrypt_messages(DB, key)
-    for i, m in enumerate(messages, 1):
-        print(f"{i}: {m}")
+            hasil.append(f"[DECRYPTION_FAILED: {e}]")
+    return hasil

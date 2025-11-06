@@ -2,29 +2,36 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 from base64 import b64encode, b64decode
+
 from login import hash_password, check_login
 from crypto_text import xor_cipher
 from crypto_file import encrypt_file, decrypt_file
-from database import init_db, save_message_plain, read_and_decrypt_messages, derive_key
+from database import init_db, save_message_plain, read_and_decrypt_messages, derive_key, MYSQL_CONFIG
 from stego import encode_lsb, decode_lsb
 
-DB_PATH = "secure.db"
-init_db(DB_PATH)
+import mysql.connector
 
+# init DB (MySQL auto-create)
+init_db()
+
+# AES key dari password tetap
 def load_aes_key():
     password = "admin123"
     salt_path = "salt.bin"
+
     if os.path.exists(salt_path):
-        salt = open(salt_path, "rb").read()
+        with open(salt_path, "rb") as f:
+            salt = f.read()
+        key, _ = derive_key(password, salt)
     else:
-        _, salt = derive_key(password)
-        open(salt_path, "wb").write(salt)
-    key, _ = derive_key(password, salt)
+        key, salt = derive_key(password)
+        with open(salt_path, "wb") as f:
+            f.write(salt)
     return key
 
 key = load_aes_key()
-stored_hash = hash_password("admin123")
 
+# GUI
 root = tk.Tk()
 root.title("Aplikasi Kriptografi Aman")
 
@@ -43,151 +50,206 @@ BG_COLOR = "#E8F0FE"
 def hover_in(e): e.widget.config(bg=BTN_HOVER)
 def hover_out(e): e.widget.config(bg=BTN_COLOR)
 
+# -----------------------
+# Login & Register
+# -----------------------
+def register_user():
+    username = entry_reg_user.get().strip()
+    password = entry_reg_pass.get().strip()
+    if not username or not password:
+        return messagebox.showwarning("Error", "Username dan password wajib diisi!")
+    pw_hash = hash_password(password)
+    try:
+        conn = mysql.connector.connect(**MYSQL_CONFIG)
+        c = conn.cursor()
+        c.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, pw_hash))
+        conn.commit()
+    except mysql.connector.IntegrityError:
+        messagebox.showerror("Error", "Username sudah terpakai!")
+    except Exception as e:
+        messagebox.showerror("Error", str(e))
+    finally:
+        try:
+            c.close()
+            conn.close()
+        except:
+            pass
+    entry_reg_user.delete(0, tk.END)
+    entry_reg_pass.delete(0, tk.END)
+    messagebox.showinfo("Sukses", "Akun berhasil dibuat!")
+
 def do_login():
-    pwd = entry_pwd.get()
-    if check_login(pwd, stored_hash):
-        entry_pwd.delete(0, tk.END)
+    username = entry_login_user.get().strip()
+    password = entry_login_pass.get().strip()
+    if not username or not password:
+        return messagebox.showwarning("Error", "Isi username dan password")
+    try:
+        conn = mysql.connector.connect(**MYSQL_CONFIG)
+        c = conn.cursor()
+        c.execute("SELECT password_hash FROM users WHERE username=%s", (username,))
+        row = c.fetchone()
+    except Exception as e:
+        messagebox.showerror("Error DB", str(e))
+        return
+    finally:
+        try:
+            c.close()
+            conn.close()
+        except:
+            pass
+    if not row:
+        return messagebox.showerror("Login", "Username tidak ditemukan")
+    stored_hash = row[0]
+    if check_login(password, stored_hash):
         login_frame.pack_forget()
+        register_frame.pack_forget()
         main_frame.pack(fill="both", expand=True, pady=10)
     else:
         messagebox.showerror("Login", "Password salah")
 
+# FRAME LOGIN
 login_frame = tk.Frame(root, bg=BG_COLOR)
-tk.Label(login_frame, text="Masukkan Password", font=FONT_TITLE, bg=BG_COLOR).pack(pady=20)
-entry_pwd = tk.Entry(login_frame, show="*", font=FONT_NORMAL, width=30, justify="center")
-entry_pwd.pack(pady=10)
-btn_login = tk.Button(login_frame, text="Login", font=FONT_NORMAL, bg=BTN_COLOR, fg="white", width=20, command=do_login)
-btn_login.pack(pady=15)
+tk.Label(login_frame, text="Login", font=FONT_TITLE, bg=BG_COLOR).pack(pady=10)
+tk.Label(login_frame, text="Username:", bg=BG_COLOR).pack()
+entry_login_user = tk.Entry(login_frame, font=FONT_NORMAL, width=30)
+entry_login_user.pack(pady=5)
+tk.Label(login_frame, text="Password:", bg=BG_COLOR).pack()
+entry_login_pass = tk.Entry(login_frame, font=FONT_NORMAL, show="*", width=30)
+entry_login_pass.pack(pady=5)
+btn_login = tk.Button(login_frame, text="Login", font=FONT_NORMAL, bg=BTN_COLOR, fg="white",
+                      width=20, command=do_login)
+btn_login.pack(pady=10)
 btn_login.bind("<Enter>", hover_in)
 btn_login.bind("<Leave>", hover_out)
+tk.Button(login_frame, text="Buat Akun Baru", font=FONT_NORMAL,
+          command=lambda: (login_frame.pack_forget(), register_frame.pack(fill="both", expand=True))
+          ).pack(pady=5)
 login_frame.pack(fill="both", expand=True)
 
+# FRAME REGISTER
+register_frame = tk.Frame(root, bg=BG_COLOR)
+tk.Label(register_frame, text="Buat Akun", font=FONT_TITLE, bg=BG_COLOR).pack(pady=10)
+tk.Label(register_frame, text="Username:", bg=BG_COLOR).pack()
+entry_reg_user = tk.Entry(register_frame, font=FONT_NORMAL, width=30)
+entry_reg_user.pack(pady=5)
+tk.Label(register_frame, text="Password:", bg=BG_COLOR).pack()
+entry_reg_pass = tk.Entry(register_frame, font=FONT_NORMAL, width=30, show="*")
+entry_reg_pass.pack(pady=5)
+btn_reg = tk.Button(register_frame, text="Registrasi", font=FONT_NORMAL,
+                    bg=BTN_COLOR, fg="white", width=20, command=register_user)
+btn_reg.pack(pady=10)
+btn_reg.bind("<Enter>", hover_in)
+btn_reg.bind("<Leave>", hover_out)
+tk.Button(register_frame, text="Kembali ke Login", font=FONT_NORMAL,
+          command=lambda: (register_frame.pack_forget(), login_frame.pack(fill="both", expand=True))
+          ).pack(pady=5)
+
+# -----------------------
+# Main functions
+# -----------------------
 def encrypt_message():
-    msg = entry_msg.get("1.0", tk.END).strip()
+    msg = entry_msg.get("1.0", "end-1c").strip()
     if not msg:
         return messagebox.showwarning("Error", "Masukkan pesan!")
-
-    xor_res = xor_cipher(msg.encode(), 23)
-    b64_data = b64encode(xor_res).decode()  # ubah hasil XOR ke base64 agar aman disimpan
-    save_message_plain(DB_PATH, b64_data, key)
-
+    xor_res = xor_cipher(msg.encode(), 23)       # bytes
+    b64_data = b64encode(xor_res).decode()       # base64 string
+    try:
+        save_message_plain(b64_data, key)            # MySQL version: (plaintext_b64, key)
+    except Exception as e:
+        return messagebox.showerror("Error DB", str(e))
     entry_msg.delete("1.0", tk.END)
-    messagebox.showinfo("Sukses", "Pesan terenkripsi dan disimpan di database")
-
+    messagebox.showinfo("Sukses", "Pesan terenkripsi disimpan")
 
 def show_messages():
-    data = read_and_decrypt_messages(DB_PATH, key)  # hasil AES decrypt
+    try:
+        data = read_and_decrypt_messages(key)  # returns list of plaintext_b64 strings
+    except Exception as e:
+        return messagebox.showerror("Error DB", str(e))
     output.delete("1.0", tk.END)
-
-    for b64_data in data:
+    for item in data:
+        if isinstance(item, str) and item.startswith("[DECRYPTION_FAILED"):
+            output.insert(tk.END, item + "\n\n")
+            continue
         try:
-            xor_bytes = b64decode(b64_data)          # decode dari base64
-            plain = xor_cipher(xor_bytes, 23).decode(errors="ignore")  # XOR decrypt
-            output.insert(tk.END, plain + "\n\n")    # tampilkan plaintext
+            raw = b64decode(item)                 # xor bytes
+            plain = xor_cipher(raw, 23).decode(errors="ignore")
+            output.insert(tk.END, plain + "\n\n")
         except Exception as e:
             output.insert(tk.END, f"[Gagal dekripsi: {e}]\n\n")
-
 
 def encrypt_file_gui():
     f = filedialog.askopenfilename()
     if f:
         out = f + ".enc"
         encrypt_file(f, out, key)
-        messagebox.showinfo("File", f"File terenkripsi disimpan:\n{out}")
+        messagebox.showinfo("File", "File terenkripsi disimpan:\n" + out)
 
 def decrypt_file_gui():
     f = filedialog.askopenfilename()
-    if f:
-        if not f.endswith(".enc"):
-            return messagebox.showwarning("Peringatan", "Pilih file .enc!")
+    if f and f.endswith(".enc"):
         out = f.replace(".enc", "_dec")
         try:
             decrypt_file(f, out, key)
-            messagebox.showinfo("File", f"File didekripsi disimpan:\n{out}")
+            messagebox.showinfo("File", "File didekripsi disimpan:\n" + out)
         except Exception as e:
-            messagebox.showerror("Error", f"Gagal dekripsi:\n{e}")
+            messagebox.showerror("Error", str(e))
 
 def stego_encode_gui():
     img = filedialog.askopenfilename(filetypes=[("BMP Images", "*.bmp")])
-    msg = entry_msg.get("1.0", tk.END).strip()
-
-    # Jika textbox kosong, ambil pesan terakhir dari DB (jika ada)
+    if not img:
+        return messagebox.showwarning("Error", "Pilih gambar BMP terlebih dahulu!")
+    msg = entry_msg.get("1.0", "end-1c").strip()
     if not msg:
-        try:
-            stored = read_and_decrypt_messages(DB_PATH, key)  # list of plaintexts stored
-            if stored:
-                last = stored[-1]            # string yang disimpan; di encrypt_message kita simpan b64(xor)
-                try:
-                    raw = b64decode(last)   # bytes = xor(msg)
-                    original_bytes = xor_cipher(raw, 23)  # bytes = original plaintext
-                    # coba decode ke str; kalau gagal, kirim bytes langsung ke stego (stego menerima bytes)
-                    try:
-                        msg = original_bytes.decode('utf-8')
-                    except UnicodeDecodeError:
-                        msg = original_bytes
-                except Exception:
-                    # jika bukan base64 (mis. pesan disimpan manual), fallback
-                    msg = last
-        except Exception:
-            msg = ""
-
-    if not img or not msg:
-        return messagebox.showwarning("Error", "Pilih gambar dan/atau isi pesan!")
-
-    out_default = "hasil_stego.bmp"
+        return messagebox.showwarning("Error", "Masukkan pesan untuk disisipkan!")
     try:
-        out_real = encode_lsb(img, msg, out_default)  # encode_lsb mengembalikan nama file
-        root.update_idletasks()
-        messagebox.showinfo("Steganografi", f"Pesan disisipkan ke {out_real}")
-        entry_msg.delete("1.0", tk.END)
+        out_real = encode_lsb(img, msg, "hasil_stego.bmp")
+        messagebox.showinfo("Stego", f"Pesan disisipkan ke {out_real}")
     except Exception as e:
-        messagebox.showerror("Error", f"Gagal menyisipkan: {e}")
+        messagebox.showerror("Error", str(e))
 
 def stego_decode_gui():
     img = filedialog.askopenfilename(filetypes=[("BMP Images", "*.bmp")])
-    if img:
+    if not img:
+        return
+    try:
         result = decode_lsb(img)
-        messagebox.showinfo("Pesan Tersembunyi", result)
+    except Exception as e:
+        return messagebox.showerror("Error", str(e))
+    if not result:
+        result = "(Gambar tidak memuat pesan)"
+    messagebox.showinfo("Pesan Tersembunyi", result)
 
+# FRAME UTAMA
 main_frame = tk.Frame(root, bg=BG_COLOR)
 tk.Label(main_frame, text="Pesan Rahasia", font=FONT_TITLE, bg=BG_COLOR).pack(pady=10)
-entry_msg = tk.Text(main_frame, height=4, width=60, font=FONT_NORMAL, wrap="word")
+entry_msg = tk.Text(main_frame, height=4, width=60, font=FONT_NORMAL)
 entry_msg.pack(pady=5)
 
-msg_button_frame = tk.Frame(main_frame, bg=BG_COLOR)
-msg_button_frame.pack(pady=5)
-btn_encrypt = tk.Button(msg_button_frame, text="Enkripsi & Simpan", bg=BTN_COLOR, fg="white", font=FONT_NORMAL, width=25, command=encrypt_message)
-btn_decrypt = tk.Button(msg_button_frame, text="Tampilkan Pesan", bg=BTN_COLOR, fg="white", font=FONT_NORMAL, width=25, command=show_messages)
-btn_encrypt.grid(row=0, column=0, padx=5)
-btn_decrypt.grid(row=0, column=1, padx=5)
-for b in (btn_encrypt, btn_decrypt):
-    b.bind("<Enter>", hover_in)
-    b.bind("<Leave>", hover_out)
+msg_btn_frame = tk.Frame(main_frame, bg=BG_COLOR)
+msg_btn_frame.pack()
+tk.Button(msg_btn_frame, text="Enkripsi & Simpan", width=25,
+          bg=BTN_COLOR, fg="white", command=encrypt_message).grid(row=0, column=0, padx=5)
+tk.Button(msg_btn_frame, text="Tampilkan Pesan", width=25,
+          bg=BTN_COLOR, fg="white", command=show_messages).grid(row=0, column=1, padx=5)
 
-output = tk.Text(main_frame, height=7, width=70, font=FONT_NORMAL, wrap="word")
-output.pack(pady=5)
+output = tk.Text(main_frame, height=7, width=70, font=FONT_NORMAL)
+output.pack(pady=10)
 
-tk.Label(main_frame, text="Enkripsi / Dekripsi File", font=FONT_TITLE, bg=BG_COLOR).pack(pady=8)
-file_button_frame = tk.Frame(main_frame, bg=BG_COLOR)
-file_button_frame.pack(pady=5)
-btn_enc_file = tk.Button(file_button_frame, text="Enkripsi File", bg=BTN_COLOR, fg="white", font=FONT_NORMAL, width=25, command=encrypt_file_gui)
-btn_dec_file = tk.Button(file_button_frame, text="Dekripsi File", bg=BTN_COLOR, fg="white", font=FONT_NORMAL, width=25, command=decrypt_file_gui)
-btn_enc_file.grid(row=0, column=0, padx=5)
-btn_dec_file.grid(row=0, column=1, padx=5)
-for b in (btn_enc_file, btn_dec_file):
-    b.bind("<Enter>", hover_in)
-    b.bind("<Leave>", hover_out)
+tk.Label(main_frame, text="Enkripsi / Dekripsi File", font=FONT_TITLE, bg=BG_COLOR).pack()
+file_frame = tk.Frame(main_frame, bg=BG_COLOR)
+file_frame.pack(pady=5)
+tk.Button(file_frame, text="Enkripsi File", width=25,
+          bg=BTN_COLOR, fg="white", command=encrypt_file_gui).grid(row=0, column=0, padx=5)
+tk.Button(file_frame, text="Dekripsi File", width=25,
+          bg=BTN_COLOR, fg="white", command=decrypt_file_gui).grid(row=0, column=1, padx=5)
 
-tk.Label(main_frame, text="Steganografi BMP", font=FONT_TITLE, bg=BG_COLOR).pack(pady=8)
-stego_button_frame = tk.Frame(main_frame, bg=BG_COLOR)
-stego_button_frame.pack(pady=5)
-btn_steg_encode = tk.Button(stego_button_frame, text="Sisipkan Pesan ke Gambar", bg=BTN_COLOR, fg="white", font=FONT_NORMAL, width=25, command=stego_encode_gui)
-btn_steg_decode = tk.Button(stego_button_frame, text="Baca Pesan Tersembunyi", bg=BTN_COLOR, fg="white", font=FONT_NORMAL, width=25, command=stego_decode_gui)
-btn_steg_encode.grid(row=0, column=0, padx=5)
-btn_steg_decode.grid(row=0, column=1, padx=5)
-for b in (btn_steg_encode, btn_steg_decode):
-    b.bind("<Enter>", hover_in)
-    b.bind("<Leave>", hover_out)
+tk.Label(main_frame, text="Steganografi BMP", font=FONT_TITLE, bg=BG_COLOR).pack(pady=10)
+stego_frame = tk.Frame(main_frame, bg=BG_COLOR)
+stego_frame.pack()
+tk.Button(stego_frame, text="Sisipkan Pesan ke Gambar", width=25,
+          bg=BTN_COLOR, fg="white", command=stego_encode_gui).grid(row=0, column=0, padx=5)
+tk.Button(stego_frame, text="Baca Pesan Tersembunyi", width=25,
+          bg=BTN_COLOR, fg="white", command=stego_decode_gui).grid(row=0, column=1, padx=5)
 
 main_frame.pack_forget()
 root.mainloop()

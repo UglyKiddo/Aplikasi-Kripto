@@ -1,9 +1,9 @@
-1. nek arep nyisipke pesan neng stego kudu input text neng atas trs lagi milih menu sisipkan pesan ke gambar
+1. install mysql-connector-python, pymysql, customtkinter
 
-2. fitur sisipkan pesan ke gambar iso digunakke nek durung nganggo menu lain e, nek gunakke fitur sisipkan pesan setelah enkripsi teks ngko pesan e ra berhasil keinput neng gambar alias kosong
+2. buat akun untuk masuk ke aplikasi kriptografi, akun dan pesan otomatis masuk ke mysql
 
-3. gambar e kudu format bmp (wes tak kei 1 nek arep nambah yo rpp)
+3. untuk gambar stegonografi tersimpan di folder, tidak masuk ke database 
 
-4. kolom seng bawah gur nggo nampilke pesan seko database
+4. cara penggunaan fitur stegonografi pertama masukkan pesan rahasia, kemudian tekan menu sisipkan pesan rahasia dan pilih gambar format bmp sudah ada 1 sebagai contoh. untuk membaca pesannya pilih menu baca pesan tersembunyi kemudian pilih yang namanya hasil_stego.bmp
 
-5. login admin123
+5. 
