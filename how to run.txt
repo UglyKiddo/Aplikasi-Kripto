@@ -1,0 +1,9 @@
+1. install openssl (selengkapnya di internet)
+
+2. password 
+- prabowo = mbg
+- gibran = solo
+
+3. how to run
+python main.py (di terminal)
+
