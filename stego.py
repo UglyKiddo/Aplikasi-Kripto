@@ -1,85 +1,77 @@
 from PIL import Image
 import os
 
-TERMINATOR = '1111111111111110'
+TERMINATOR = '11111111111111101111111111111110'  # lebih panjang agar aman
 
 def encode_lsb(image_path, message, output_path="hasil_stego.bmp"):
-    img = Image.open(image_path)
-    img = img.convert("RGB")
+    """
+    Menyisipkan pesan ke gambar menggunakan LSB, hanya format BMP (24-bit) untuk memastikan bit tidak dikompresi.
+    """
+    img = Image.open(image_path).convert("RGB")
     w, h = img.size
 
-    # message -> bytes
-    if isinstance(message, str):
-        msg_bytes = message.encode('utf-8')
-    elif isinstance(message, bytes):
-        msg_bytes = message
-    else:
-        msg_bytes = str(message).encode('utf-8')
-
+    # ubah pesan menjadi biner
+    msg_bytes = message.encode("utf-8") if isinstance(message, str) else bytes(message)
     binary = ''.join(f'{b:08b}' for b in msg_bytes) + TERMINATOR
-    capacity = w * h * 3
-    if len(binary) > capacity:
+
+    if len(binary) > w * h * 3:
+        img.close()
         raise ValueError("Pesan terlalu panjang untuk gambar ini.")
 
-    pixels = list(img.getdata())
-    new_pixels = []
+    pixels = img.load()
     idx = 0
 
-    for p in pixels:
-        r, g, b = p
-        if idx < len(binary):
-            r = (r & ~1) | int(binary[idx]); idx += 1
-        if idx < len(binary):
-            g = (g & ~1) | int(binary[idx]); idx += 1
-        if idx < len(binary):
-            b = (b & ~1) | int(binary[idx]); idx += 1
-        new_pixels.append((r, g, b))
+    for y in range(h):
+        for x in range(w):
+            if idx >= len(binary):
+                break
+            r, g, b = pixels[x, y]
+            r = (r & ~1) | int(binary[idx]) if idx < len(binary) else r; idx += 1
+            g = (g & ~1) | int(binary[idx]) if idx < len(binary) else g; idx += 1
+            b = (b & ~1) | int(binary[idx]) if idx < len(binary) else b; idx += 1
+            pixels[x, y] = (r, g, b)
         if idx >= len(binary):
-            # append remaining pixels unchanged
-            remaining = pixels[len(new_pixels):]
-            if remaining:
-                new_pixels.extend(remaining)
             break
 
-    img.putdata(new_pixels)
-
+    # pastikan output .bmp dan tidak overwrite file yang ada
     base, ext = os.path.splitext(output_path)
-    if ext == "":
-        ext = ".bmp"
-    new_output = output_path
+    if not ext or ext.lower() != ".bmp":
+        output_path = base + ".bmp"
+
     counter = 1
+    new_output = output_path
     while os.path.exists(new_output):
-        new_output = f"{base}{counter}{ext}"
+        new_output = f"{base}_{counter}.bmp"
         counter += 1
 
-    img.save(new_output, format="BMP")
+    # Simpan gambar baru (BMP tanpa kompresi)
+    img.save(new_output, "BMP")
     img.close()
+
+    # Pastikan file tersimpan dan tidak kosong
+    if os.path.getsize(new_output) < 100:
+        raise IOError("File stego tidak tersimpan dengan benar.")
+
     return new_output
 
-
 def decode_lsb(image_path):
-    img = Image.open(image_path)
-    img = img.convert("RGB")
-    pixels = list(img.getdata())
-
+    img = Image.open(image_path).convert("RGB")
+    w, h = img.size
+    pixels = img.load()
     bits = []
-    for (r, g, b) in pixels:
-        bits.append(str(r & 1))
-        bits.append(str(g & 1))
-        bits.append(str(b & 1))
-        # check terminator efficiently on the fly
-        if len(bits) >= len(TERMINATOR):
-            if ''.join(bits[-len(TERMINATOR):]) == TERMINATOR:
-                # build full binary string without terminator
-                binary = ''.join(bits)[:-len(TERMINATOR)]
-                data = bytearray()
-                for i in range(0, len(binary), 8):
-                    byte = binary[i:i+8]
-                    if len(byte) < 8:
-                        break
-                    data.append(int(byte, 2))
+    for y in range(h):
+        for x in range(w):
+            r, g, b = pixels[x, y]
+            bits.append(str(r & 1))
+            bits.append(str(g & 1))
+            bits.append(str(b & 1))
+            if len(bits) >= len(TERMINATOR) and ''.join(bits[-len(TERMINATOR):]) == TERMINATOR:
+                binary = ''.join(bits[:-len(TERMINATOR)])
+                img.close()
+                data = bytearray(int(binary[i:i+8], 2) for i in range(0, len(binary), 8))
                 try:
                     return data.decode('utf-8')
                 except UnicodeDecodeError:
                     return data.decode('latin1')
+    img.close()
     return ""

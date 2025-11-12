@@ -1,24 +1,28 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import os
-from base64 import b64encode, b64decode
+from flask import Flask, render_template, request, redirect, url_for, session, send_from_directory, flash
+import os, tempfile, base64
+import mysql.connector
+from PIL import Image
 
+from database import (
+    init_db, derive_key, save_encrypted_message, read_messages_for_user, MYSQL_CONFIG
+)
 from login import hash_password, check_login
 from crypto_text import xor_cipher
 from crypto_file import encrypt_file, decrypt_file
-from database import init_db, save_message_plain, read_and_decrypt_messages, derive_key, MYSQL_CONFIG
 from stego import encode_lsb, decode_lsb
 
-import mysql.connector
+# === Direktori dasar ===
+home_dir = os.path.expanduser("~")
+base_dir = os.path.join(home_dir, "local_https_demo")
+os.makedirs(base_dir, exist_ok=True)
 
-# init DB (MySQL auto-create)
+# === Inisialisasi database ===
 init_db()
 
-# AES key dari password tetap
+# === Load AES Key ===
 def load_aes_key():
     password = "admin123"
-    salt_path = "salt.bin"
-
+    salt_path = os.path.join(base_dir, "salt.bin")
     if os.path.exists(salt_path):
         with open(salt_path, "rb") as f:
             salt = f.read()
@@ -31,225 +35,251 @@ def load_aes_key():
 
 key = load_aes_key()
 
-# GUI
-root = tk.Tk()
-root.title("Aplikasi Kriptografi Aman")
+# === Konfigurasi Flask ===
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
-w, h = 700, 600
-sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-x, y = int((sw - w) / 2), int((sh - h) / 2)
-root.geometry(f"{w}x{h}+{x}+{y}")
-root.config(bg="#E8F0FE")
+# ================== ROUTES ==================
 
-FONT_TITLE = ("Segoe UI", 14, "bold")
-FONT_NORMAL = ("Segoe UI", 10)
-BTN_COLOR = "#1976D2"
-BTN_HOVER = "#1565C0"
-BG_COLOR = "#E8F0FE"
-
-def hover_in(e): e.widget.config(bg=BTN_HOVER)
-def hover_out(e): e.widget.config(bg=BTN_COLOR)
-
-# -----------------------
-# Login & Register
-# -----------------------
-def register_user():
-    username = entry_reg_user.get().strip()
-    password = entry_reg_pass.get().strip()
-    if not username or not password:
-        return messagebox.showwarning("Error", "Username dan password wajib diisi!")
-    pw_hash = hash_password(password)
+@app.route("/")
+def home():
+    if "user" not in session:
+        return redirect(url_for("login"))
     try:
         conn = mysql.connector.connect(**MYSQL_CONFIG)
         c = conn.cursor()
-        c.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, pw_hash))
-        conn.commit()
-    except mysql.connector.IntegrityError:
-        messagebox.showerror("Error", "Username sudah terpakai!")
-    except Exception as e:
-        messagebox.showerror("Error", str(e))
-    finally:
+        c.execute("SELECT username FROM users WHERE username != %s", (session["user"],))
+        users = [u[0] for u in c.fetchall()]
+        c.close(); conn.close()
+    except:
+        users = []
+    return render_template("home.html", users=users, username=session["user"])
+
+# === LOGIN ===
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        if not username or not password:
+            flash("Isi username dan password")
+            return redirect(url_for("login"))
         try:
-            c.close()
-            conn.close()
-        except:
-            pass
-    entry_reg_user.delete(0, tk.END)
-    entry_reg_pass.delete(0, tk.END)
-    messagebox.showinfo("Sukses", "Akun berhasil dibuat!")
-
-def do_login():
-    username = entry_login_user.get().strip()
-    password = entry_login_pass.get().strip()
-    if not username or not password:
-        return messagebox.showwarning("Error", "Isi username dan password")
-    try:
-        conn = mysql.connector.connect(**MYSQL_CONFIG)
-        c = conn.cursor()
-        c.execute("SELECT password_hash FROM users WHERE username=%s", (username,))
-        row = c.fetchone()
-    except Exception as e:
-        messagebox.showerror("Error DB", str(e))
-        return
-    finally:
-        try:
-            c.close()
-            conn.close()
-        except:
-            pass
-    if not row:
-        return messagebox.showerror("Login", "Username tidak ditemukan")
-    stored_hash = row[0]
-    if check_login(password, stored_hash):
-        login_frame.pack_forget()
-        register_frame.pack_forget()
-        main_frame.pack(fill="both", expand=True, pady=10)
-    else:
-        messagebox.showerror("Login", "Password salah")
-
-# FRAME LOGIN
-login_frame = tk.Frame(root, bg=BG_COLOR)
-tk.Label(login_frame, text="Login", font=FONT_TITLE, bg=BG_COLOR).pack(pady=10)
-tk.Label(login_frame, text="Username:", bg=BG_COLOR).pack()
-entry_login_user = tk.Entry(login_frame, font=FONT_NORMAL, width=30)
-entry_login_user.pack(pady=5)
-tk.Label(login_frame, text="Password:", bg=BG_COLOR).pack()
-entry_login_pass = tk.Entry(login_frame, font=FONT_NORMAL, show="*", width=30)
-entry_login_pass.pack(pady=5)
-btn_login = tk.Button(login_frame, text="Login", font=FONT_NORMAL, bg=BTN_COLOR, fg="white",
-                      width=20, command=do_login)
-btn_login.pack(pady=10)
-btn_login.bind("<Enter>", hover_in)
-btn_login.bind("<Leave>", hover_out)
-tk.Button(login_frame, text="Buat Akun Baru", font=FONT_NORMAL,
-          command=lambda: (login_frame.pack_forget(), register_frame.pack(fill="both", expand=True))
-          ).pack(pady=5)
-login_frame.pack(fill="both", expand=True)
-
-# FRAME REGISTER
-register_frame = tk.Frame(root, bg=BG_COLOR)
-tk.Label(register_frame, text="Buat Akun", font=FONT_TITLE, bg=BG_COLOR).pack(pady=10)
-tk.Label(register_frame, text="Username:", bg=BG_COLOR).pack()
-entry_reg_user = tk.Entry(register_frame, font=FONT_NORMAL, width=30)
-entry_reg_user.pack(pady=5)
-tk.Label(register_frame, text="Password:", bg=BG_COLOR).pack()
-entry_reg_pass = tk.Entry(register_frame, font=FONT_NORMAL, width=30, show="*")
-entry_reg_pass.pack(pady=5)
-btn_reg = tk.Button(register_frame, text="Registrasi", font=FONT_NORMAL,
-                    bg=BTN_COLOR, fg="white", width=20, command=register_user)
-btn_reg.pack(pady=10)
-btn_reg.bind("<Enter>", hover_in)
-btn_reg.bind("<Leave>", hover_out)
-tk.Button(register_frame, text="Kembali ke Login", font=FONT_NORMAL,
-          command=lambda: (register_frame.pack_forget(), login_frame.pack(fill="both", expand=True))
-          ).pack(pady=5)
-
-# -----------------------
-# Main functions
-# -----------------------
-def encrypt_message():
-    msg = entry_msg.get("1.0", "end-1c").strip()
-    if not msg:
-        return messagebox.showwarning("Error", "Masukkan pesan!")
-    xor_res = xor_cipher(msg.encode(), 23)       # bytes
-    b64_data = b64encode(xor_res).decode()       # base64 string
-    try:
-        save_message_plain(b64_data, key)            # MySQL version: (plaintext_b64, key)
-    except Exception as e:
-        return messagebox.showerror("Error DB", str(e))
-    entry_msg.delete("1.0", tk.END)
-    messagebox.showinfo("Sukses", "Pesan terenkripsi disimpan")
-
-def show_messages():
-    try:
-        data = read_and_decrypt_messages(key)  # returns list of plaintext_b64 strings
-    except Exception as e:
-        return messagebox.showerror("Error DB", str(e))
-    output.delete("1.0", tk.END)
-    for item in data:
-        if isinstance(item, str) and item.startswith("[DECRYPTION_FAILED"):
-            output.insert(tk.END, item + "\n\n")
-            continue
-        try:
-            raw = b64decode(item)                 # xor bytes
-            plain = xor_cipher(raw, 23).decode(errors="ignore")
-            output.insert(tk.END, plain + "\n\n")
+            conn = mysql.connector.connect(**MYSQL_CONFIG)
+            c = conn.cursor()
+            c.execute("SELECT password_hash FROM users WHERE username=%s", (username,))
+            row = c.fetchone()
+            c.close(); conn.close()
         except Exception as e:
-            output.insert(tk.END, f"[Gagal dekripsi: {e}]\n\n")
+            flash(str(e))
+            return redirect(url_for("login"))
+        if not row:
+            flash("Username tidak ditemukan")
+            return redirect(url_for("login"))
+        if check_login(password, row[0]):
+            session["user"] = username
+            return redirect(url_for("home"))
+        else:
+            flash("Password salah")
+            return redirect(url_for("login"))
+    return render_template("login.html")
 
-def encrypt_file_gui():
-    f = filedialog.askopenfilename()
-    if f:
-        out = f + ".enc"
-        encrypt_file(f, out, key)
-        messagebox.showinfo("File", "File terenkripsi disimpan:\n" + out)
-
-def decrypt_file_gui():
-    f = filedialog.askopenfilename()
-    if f and f.endswith(".enc"):
-        out = f.replace(".enc", "_dec")
+# === REGISTER ===
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        if not username or not password:
+            flash("Semua field wajib diisi")
+            return redirect(url_for("register"))
+        pw_hash = hash_password(password)
         try:
-            decrypt_file(f, out, key)
-            messagebox.showinfo("File", "File didekripsi disimpan:\n" + out)
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
+            conn = mysql.connector.connect(**MYSQL_CONFIG)
+            c = conn.cursor()
+            c.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, pw_hash))
+            conn.commit(); c.close(); conn.close()
+            flash("Akun berhasil dibuat, silakan login")
+            return redirect(url_for("login"))
+        except mysql.connector.errors.IntegrityError:
+            flash("Username sudah digunakan")
+            return redirect(url_for("register"))
+    return render_template("register.html")
 
-def stego_encode_gui():
-    img = filedialog.askopenfilename(filetypes=[("BMP Images", "*.bmp")])
-    if not img:
-        return messagebox.showwarning("Error", "Pilih gambar BMP terlebih dahulu!")
-    msg = entry_msg.get("1.0", "end-1c").strip()
-    if not msg:
-        return messagebox.showwarning("Error", "Masukkan pesan untuk disisipkan!")
+# === LOGOUT ===
+@app.route("/logout")
+def logout():
+    session.pop("user", None)
+    return redirect(url_for("login"))
+
+# === KIRIM PESAN TEKS ===
+@app.route("/send_message", methods=["POST"])
+def send_message():
+    if "user" not in session:
+        return redirect(url_for("login"))
+    receiver = (request.form.get("receiver") or "").strip()
+    msg = (request.form.get("message") or "").strip()
+    if not receiver or not msg:
+        flash("Pesan tidak boleh kosong")
+        return redirect(url_for("home"))
     try:
-        out_real = encode_lsb(img, msg, "hasil_stego.bmp")
-        messagebox.showinfo("Stego", f"Pesan disisipkan ke {out_real}")
+        save_encrypted_message(
+            sender=session["user"],
+            receiver=receiver,
+            content=msg.encode("utf-8"),
+            key=key,
+            msg_type="text"
+        )
+        flash("Pesan teks terenkripsi dan terkirim ✅")
     except Exception as e:
-        messagebox.showerror("Error", str(e))
+        flash(f"Gagal mengirim pesan: {e}")
+    return redirect(url_for("home"))
 
-def stego_decode_gui():
-    img = filedialog.askopenfilename(filetypes=[("BMP Images", "*.bmp")])
-    if not img:
-        return
+# === PESAN MASUK ===
+@app.route("/inbox")
+def inbox():
+    if "user" not in session:
+        return redirect(url_for("login"))
     try:
-        result = decode_lsb(img)
+        messages = read_messages_for_user(session["user"], key)
+        text_messages = [m for m in messages if m["msg_type"] == "text"]
     except Exception as e:
-        return messagebox.showerror("Error", str(e))
-    if not result:
-        result = "(Gambar tidak memuat pesan)"
-    messagebox.showinfo("Pesan Tersembunyi", result)
+        flash(str(e))
+        text_messages = []
+    return render_template("inbox.html", messages=text_messages, username=session["user"])
 
-# FRAME UTAMA
-main_frame = tk.Frame(root, bg=BG_COLOR)
-tk.Label(main_frame, text="Pesan Rahasia", font=FONT_TITLE, bg=BG_COLOR).pack(pady=10)
-entry_msg = tk.Text(main_frame, height=4, width=60, font=FONT_NORMAL)
-entry_msg.pack(pady=5)
+# === KIRIM FILE ===
+@app.route("/send_file", methods=["POST"])
+def send_file_route():
+    if "user" not in session:
+        return redirect(url_for("login"))
+    receiver = (request.form.get("receiver_file") or "").strip()
+    f = request.files.get("file")
+    if not f or not receiver:
+        flash("File atau penerima kosong")
+        return redirect(url_for("home"))
+    tmp_in = tempfile.mktemp(dir=base_dir)
+    tmp_enc = tmp_in + ".enc"
+    try:
+        f.save(tmp_in)
+        encrypt_file(tmp_in, tmp_enc, key)
+        with open(tmp_enc, "rb") as fh:
+            file_data = fh.read()
+        save_encrypted_message(
+            sender=session["user"],
+            receiver=receiver,
+            content=file_data,
+            key=key,
+            msg_type="file",
+            filename=f.filename
+        )
+        flash("File terenkripsi dan terkirim ✅")
+    except Exception as e:
+        flash(f"Gagal kirim file: {e}")
+    finally:
+        for p in (tmp_in, tmp_enc):
+            if os.path.exists(p): os.remove(p)
+    return redirect(url_for("home"))
 
-msg_btn_frame = tk.Frame(main_frame, bg=BG_COLOR)
-msg_btn_frame.pack()
-tk.Button(msg_btn_frame, text="Enkripsi & Simpan", width=25,
-          bg=BTN_COLOR, fg="white", command=encrypt_message).grid(row=0, column=0, padx=5)
-tk.Button(msg_btn_frame, text="Tampilkan Pesan", width=25,
-          bg=BTN_COLOR, fg="white", command=show_messages).grid(row=0, column=1, padx=5)
+# === FILE MASUK ===
+@app.route("/files")
+def files():
+    if "user" not in session:
+        return redirect(url_for("login"))
+    conn = mysql.connector.connect(**MYSQL_CONFIG)
+    c = conn.cursor()
+    c.execute("""
+        SELECT sender, filename, timestamp
+        FROM messages
+        WHERE receiver=%s AND msg_type='file'
+        ORDER BY id DESC
+    """, (session["user"],))
+    rows = c.fetchall()
+    conn.close()
+    return render_template("files.html", rows=rows, username=session["user"])
 
-output = tk.Text(main_frame, height=7, width=70, font=FONT_NORMAL)
-output.pack(pady=10)
+# === KIRIM STEGO ===
+@app.route("/send_stego", methods=["POST"])
+def send_stego():
+    if "user" not in session:
+        return redirect(url_for("login"))
+    receiver = (request.form.get("receiver_stego") or "").strip()
+    msg = (request.form.get("stego_msg") or "").strip()
+    img_file = request.files.get("stego_img")
+    if not receiver or not msg or not img_file:
+        flash("Lengkapi semua field")
+        return redirect(url_for("home"))
+    try:
+        tmp_path = tempfile.mktemp(dir=base_dir, suffix=".bmp")
+        img_file.save(tmp_path)
+        with Image.open(tmp_path) as im:
+            if im.mode != "RGB":
+                im = im.convert("RGB")
+            im.save(tmp_path, format="BMP")
+        out_path = tmp_path.replace(".bmp", "_stego.bmp")
+        encode_lsb(tmp_path, msg, out_path)
+        with open(out_path, "rb") as fh:
+            stego_data = fh.read()
+        save_encrypted_message(
+            sender=session["user"],
+            receiver=receiver,
+            content=stego_data,
+            key=key,
+            msg_type="image",
+            filename=os.path.basename(out_path)
+        )
+        flash("Gambar dengan pesan tersembunyi berhasil dikirim ✅")
+    except Exception as e:
+        flash(f"Gagal membuat/mengirim stego: {e}")
+    finally:
+        for p in (tmp_path, out_path):
+            if os.path.exists(p): os.remove(p)
+    return redirect(url_for("home"))
 
-tk.Label(main_frame, text="Enkripsi / Dekripsi File", font=FONT_TITLE, bg=BG_COLOR).pack()
-file_frame = tk.Frame(main_frame, bg=BG_COLOR)
-file_frame.pack(pady=5)
-tk.Button(file_frame, text="Enkripsi File", width=25,
-          bg=BTN_COLOR, fg="white", command=encrypt_file_gui).grid(row=0, column=0, padx=5)
-tk.Button(file_frame, text="Dekripsi File", width=25,
-          bg=BTN_COLOR, fg="white", command=decrypt_file_gui).grid(row=0, column=1, padx=5)
+# === INBOX STEGO ===
+@app.route("/stego_inbox")
+def stego_inbox():
+    if "user" not in session:
+        return redirect(url_for("login"))
+    stego_msgs = []
+    try:
+        msgs = read_messages_for_user(session["user"], key)
+        for msg in msgs:
+            if msg["msg_type"] == "image":
+                data = msg["content"]
+                filename = msg["filename"]
+                tmp_path = tempfile.mktemp(dir=base_dir, suffix=".bmp")
+                with open(tmp_path, "wb") as f:
+                    f.write(data)
+                try:
+                    hidden_text = decode_lsb(tmp_path)
+                except Exception as e:
+                    hidden_text = f"[Gagal baca pesan: {e}]"
+                img_b64 = base64.b64encode(data).decode("utf-8")
+                stego_msgs.append({
+                    "sender": msg["sender"],
+                    "filename": filename,
+                    "timestamp": msg["timestamp"],
+                    "message": hidden_text,
+                    "image_data": f"data:image/bmp;base64,{img_b64}"
+                })
+                os.remove(tmp_path)
+    except Exception as e:
+        flash(str(e))
+    return render_template("stego.html", rows=stego_msgs, username=session["user"])
 
-tk.Label(main_frame, text="Steganografi BMP", font=FONT_TITLE, bg=BG_COLOR).pack(pady=10)
-stego_frame = tk.Frame(main_frame, bg=BG_COLOR)
-stego_frame.pack()
-tk.Button(stego_frame, text="Sisipkan Pesan ke Gambar", width=25,
-          bg=BTN_COLOR, fg="white", command=stego_encode_gui).grid(row=0, column=0, padx=5)
-tk.Button(stego_frame, text="Baca Pesan Tersembunyi", width=25,
-          bg=BTN_COLOR, fg="white", command=stego_decode_gui).grid(row=0, column=1, padx=5)
+# === Jalankan Aplikasi ===
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    cert_path = os.path.join(current_dir, "cert.pem")
+    key_path = os.path.join(current_dir, "key.pem")
 
-main_frame.pack_forget()
-root.mainloop()
+    if not os.path.exists(cert_path) or not os.path.exists(key_path):
+        raise FileNotFoundError(f"File sertifikat TLS tidak ditemukan di {current_dir}")
+
+    app.run(
+        host="127.0.0.1",
+        port=5000,
+        ssl_context=(cert_path, key_path),
+        debug=True
+    )

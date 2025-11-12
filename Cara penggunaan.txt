@@ -1,9 +1,0 @@
-1. install mysql-connector-python, pymysql, customtkinter
-
-2. buat akun untuk masuk ke aplikasi kriptografi, akun dan pesan otomatis masuk ke mysql
-
-3. untuk gambar stegonografi tersimpan di folder, tidak masuk ke database 
-
-4. cara penggunaan fitur stegonografi pertama masukkan pesan rahasia, kemudian tekan menu sisipkan pesan rahasia dan pilih gambar format bmp sudah ada 1 sebagai contoh. untuk membaca pesannya pilih menu baca pesan tersembunyi kemudian pilih yang namanya hasil_stego.bmp
-
-5. 

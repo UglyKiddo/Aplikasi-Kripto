@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+    <title>File Masuk | Aplikasi Kripto</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="card">
+        <h2>📁 File Masuk untuk {{ username }}</h2>
+        <a href="{{ url_for('home') }}">🏠 Beranda</a>
+        <hr>
+        {% if files %}
+            <table border="1" cellspacing="0" cellpadding="8" width="100%">
+                <tr>
+                    <th>Pengirim</th>
+                    <th>Nama File</th>
+                    <th>Tanggal</th>
+                    <th>Aksi</th>
+                </tr>
+                {% for f in files %}
+                    <tr>
+                        <td>{{ f.sender }}</td>
+                        <td>{{ f.filename }}</td>
+                        <td>{{ f.timestamp }}</td>
+                        <td><a href="{{ url_for('download_file', file_id=f.id) }}">🔽 Unduh & Dekripsi</a></td>
+                    </tr>
+                {% endfor %}
+            </table>
+        {% else %}
+            <p>Tidak ada file masuk.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>📥 Pesan Masuk</title>
+    <style>
+        body {
+            background: #121212;
+            color: #eee;
+            font-family: Arial, sans-serif;
+            padding: 40px;
+        }
+        .card {
+            background: #1f1f1f;
+            padding: 20px;
+            border-radius: 10px;
+            margin: auto;
+            max-width: 600px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        .msg {
+            border-bottom: 1px solid #333;
+            padding: 10px 0;
+        }
+        a {
+            color: #90caf9;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>📥 Pesan Masuk - {{ username }}</h2>
+        <a href="{{ url_for('home') }}">⬅️ Kembali ke Beranda</a>
+        <hr>
+
+        {% if rows %}
+            {% for sender, msg in rows %}
+                <div class="msg">
+                    <strong>{{ sender }}</strong><br>
+                    <pre style="white-space: pre-wrap;">{{ msg }}</pre>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>Tidak ada pesan masuk.</p>
+        {% endif %}
+    </div>
+</body>
+</html>
