@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Kirim Pesan</title>
+    <style>
+        body { background: #121212; color: #eee; font-family: Arial; padding: 40px; }
+        .card { background: #1f1f1f; padding: 25px; border-radius: 10px; max-width: 600px; margin: auto; }
+        input, textarea, select, button { width: 100%; padding: 10px; margin: 8px 0; border: none; border-radius: 6px; }
+        button { background: #2196f3; color: white; }
+        button:hover { background: #1976d2; }
+        a { color: #90caf9; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Kirim Pesan</h2>
+
+        <form method="post" action="{{ url_for('send_message') }}">
+            <label>Kepada:</label>
+            <select name="receiver" required>
+                {% for u in users %}
+                <option value="{{ u }}">{{ u }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Pesan:</label>
+            <textarea rows="5" name="message" required></textarea>
+
+            <button type="submit">Kirim</button>
+        </form>
+
+        <a href="{{ url_for('home') }}">Kembali</a>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <ul>
+                    {% for m in messages %}
+                        <li>{{ m }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+    </div>
+</body>
+</html>

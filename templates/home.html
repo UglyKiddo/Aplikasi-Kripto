@@ -9,119 +9,77 @@
             color: #eee;
             font-family: Arial, sans-serif;
             padding: 40px;
+            text-align: center;
         }
         .card {
             background: #1f1f1f;
-            padding: 20px;
-            border-radius: 10px;
+            padding: 30px;
+            border-radius: 12px;
             margin: auto;
-            max-width: 600px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            max-width: 450px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
         }
-        input, textarea, select, button {
-            margin: 5px 0;
-            padding: 8px;
-            border-radius: 6px;
-            border: none;
-            width: 100%;
-            box-sizing: border-box;
+        h2 {
+            color: #90caf9;
+            margin-bottom: 20px;
         }
-        button {
-            background: #2196f3;
-            color: white;
-            cursor: pointer;
-            font-weight: bold;
+        .menu-btn {
+            display: block;
+            background: #212121;
+            padding: 15px;
+            margin: 12px 0;
+            border-radius: 8px;
+            color: #90caf9;
+            font-size: 18px;
+            text-decoration: none;
+            transition: 0.2s;
+            border: 1px solid #333;
         }
-        button:hover {
-            background: #1976d2;
+        .menu-btn:hover {
+            background: #333;
         }
-        a { color: #90caf9; text-decoration: none; display: inline-block; margin-top: 10px; }
-        a:hover { text-decoration: underline; }
-        ul { list-style: none; padding-left: 0; }
-        hr { border: 0; border-top: 1px solid #333; margin: 20px 0; }
-        h2, h3 { color: #90caf9; }
+        a.logout {
+            display: inline-block;
+            margin-top: 20px;
+            color: #f44336;
+            text-decoration: none;
+        }
+        a.logout:hover {
+            text-decoration: underline;
+        }
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
     </style>
 </head>
 <body>
+
     <div class="card">
-        <h2>Selamat datang, {{ username }} 👋</h2>
-        <a href="{{ url_for('logout') }}">🚪 Logout</a>
-        <hr>
 
-        <!-- ====================== Kirim Pesan Biasa ====================== -->
-        <h3>💬 Kirim Pesan</h3>
-        <form method="post" action="{{ url_for('send_message') }}">
-            <label>Kepada:</label>
-            <select name="receiver" required>
-                {% for u in users %}
-                    <option value="{{ u }}">{{ u }}</option>
-                {% endfor %}
-            </select>
+        <h2>Selamat datang, {{ username }}</h2>
 
-            <label>Pesan:</label>
-            <textarea name="message" rows="4" placeholder="Tulis pesan di sini..." required></textarea>
+        <a class="menu-btn" href="{{ url_for('send_message_page') }}">Kirim Pesan Teks</a>
+        <a class="menu-btn" href="{{ url_for('send_file_page') }}">Kirim File</a>
+        <a class="menu-btn" href="{{ url_for('send_stego_page') }}">Kirim Gambar</a>
 
-            <button type="submit">Kirim Pesan</button>
-        </form>
+        <a class="menu-btn" href="{{ url_for('inbox') }}">Pesan Masuk</a>
+        <a class="menu-btn" href="{{ url_for('files') }}">File Masuk</a>
+        <a class="menu-btn" href="{{ url_for('stego_inbox') }}">Gambar Masuk</a>
 
-        <hr>
+        <a class="logout" href="{{ url_for('logout') }}">Logout</a>
 
-        <!-- ====================== Kirim File Terenkripsi ====================== -->
-        <h3>📁 Kirim File Terenkripsi</h3>
-        <form method="post" action="{{ url_for('send_file_route') }}" enctype="multipart/form-data">
-            <label>Kepada:</label>
-            <select name="receiver_file" required>
-                {% for u in users %}
-                    <option value="{{ u }}">{{ u }}</option>
-                {% endfor %}
-            </select>
-
-            <label>Pilih File:</label>
-            <input type="file" name="file" required>
-
-            <button type="submit">Kirim File</button>
-        </form>
-
-        <hr>
-
-        <!-- ====================== Kirim Gambar dengan Pesan Steganografi ====================== -->
-        <h3>🖼️ Kirim Gambar dengan Pesan Tersembunyi (Steganografi)</h3>
-        <form method="post" action="{{ url_for('send_stego') }}" enctype="multipart/form-data">
-            <label>Kepada:</label>
-            <select name="receiver_stego" required>
-                {% for u in users %}
-                    <option value="{{ u }}">{{ u }}</option>
-                {% endfor %}
-            </select>
-
-            <label>Pesan Rahasia:</label>
-            <textarea name="stego_msg" rows="3" placeholder="Tulis pesan rahasia..." required></textarea>
-
-            <label>Pilih Gambar (format .BMP):</label>
-            <input type="file" name="stego_img" accept=".bmp" required>
-
-            <button type="submit">Kirim Gambar</button>
-        </form>
-
-        <hr>
-
-        <!-- ====================== Navigasi Halaman Inbox ====================== -->
-        <a href="{{ url_for('inbox') }}">📥 Pesan Masuk</a><br>
-        <a href="{{ url_for('files') }}">📦 File Masuk</a><br>
-        <a href="{{ url_for('stego_inbox') }}">🔍 Gambar & Pesan Rahasia</a>
-
-        <hr>
-
-        <!-- ====================== Notifikasi Flash ====================== -->
         {% with messages = get_flashed_messages() %}
             {% if messages %}
-                <ul>
-                    {% for m in messages %}
-                        <li>⚠️ {{ m }}</li>
-                    {% endfor %}
-                </ul>
+            <ul>
+                {% for m in messages %}
+                    <li>{{ m }}</li>
+                {% endfor %}
+            </ul>
             {% endif %}
         {% endwith %}
+
     </div>
+
 </body>
 </html>

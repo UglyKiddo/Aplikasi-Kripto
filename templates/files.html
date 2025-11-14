@@ -1,33 +1,32 @@
 <!doctype html>
-<html>
+<html lang="id">
 <head>
-    <title>File Masuk | Aplikasi Kripto</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta charset="UTF-8">
+    <title>File Masuk</title>
+    <style>
+        body { background: #121212; color: #eee; font-family: Arial; padding: 40px; }
+        .card { background: #1f1f1f; padding: 25px; border-radius: 10px; max-width: 650px; margin: auto; }
+        a { color: #90caf9; text-decoration: none; }
+        .item { padding: 10px 0; border-bottom: 1px solid #333; }
+    </style>
 </head>
 <body>
     <div class="card">
-        <h2>📁 File Masuk untuk {{ username }}</h2>
-        <a href="{{ url_for('home') }}">🏠 Beranda</a>
+        <h2>File Masuk</h2>
+        <a href="{{ url_for('home') }}">Kembali</a>
         <hr>
-        {% if files %}
-            <table border="1" cellspacing="0" cellpadding="8" width="100%">
-                <tr>
-                    <th>Pengirim</th>
-                    <th>Nama File</th>
-                    <th>Tanggal</th>
-                    <th>Aksi</th>
-                </tr>
-                {% for f in files %}
-                    <tr>
-                        <td>{{ f.sender }}</td>
-                        <td>{{ f.filename }}</td>
-                        <td>{{ f.timestamp }}</td>
-                        <td><a href="{{ url_for('download_file', file_id=f.id) }}">🔽 Unduh & Dekripsi</a></td>
-                    </tr>
-                {% endfor %}
-            </table>
+
+        {% if rows %}
+        {% for msg_id, sender, filename, timestamp in rows %}
+        <div class="item">
+            Pengirim: {{ sender }}<br>
+            Nama File: {{ filename }}<br>
+            Waktu: {{ timestamp }}<br>
+            <a href="{{ url_for('download_file', msg_id=msg_id) }}">Download</a>
+        </div>
+        {% endfor %}
         {% else %}
-            <p>Tidak ada file masuk.</p>
+        <p>Tidak ada file masuk.</p>
         {% endif %}
     </div>
 </body>

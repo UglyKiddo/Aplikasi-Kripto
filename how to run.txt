@@ -1,4 +1,5 @@
 1. install openssl (selengkapnya di internet)
+install pycryptodome
 
 2. password 
 - prabowo = mbg

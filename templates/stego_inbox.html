@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Gambar Stego Masuk</title>
+    <style>
+        body { background: #121212; color: #eee; font-family: Arial; padding: 40px; }
+        .card { background: #1f1f1f; padding: 25px; border-radius: 10px; max-width: 800px; margin: auto; }
+        .item { padding: 15px 0; border-bottom: 1px solid #333; }
+        img { max-width: 280px; margin-top: 10px; display: block; border-radius: 8px; }
+        a { color: #90caf9; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Gambar Stego Masuk</h2>
+        <a href="{{ url_for('home') }}">⟵ Kembali</a>
+        <hr>
+
+        {% if rows %}
+            {% for s in rows %}
+            <div class="item">
+                Pengirim: {{ s.sender }}<br>
+                Nama File: {{ s.filename }}<br>
+                Waktu: {{ s.timestamp }}<br>
+                Pesan: {{ s.message }}<br>
+                <img src="{{ s.image_data }}">
+            </div>
+            {% endfor %}
+        {% else %}
+            <p>Tidak ada gambar stego masuk.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

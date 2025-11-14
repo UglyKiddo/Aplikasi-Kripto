@@ -1,4 +1,3 @@
-# database.py — perbaikan minimal (tambahan tabel `stego` + sedikit penanganan resources)
 import os
 import base64
 from typing import Tuple, List, Dict, Any, Union
@@ -21,10 +20,6 @@ DB_NAME = "kriptografi"
 
 
 def derive_key(password: str, salt: bytes = None, iterations: int = 200_000) -> Tuple[bytes, bytes]:
-    """
-    Derive a 32-byte key from a password using PBKDF2-HMAC-SHA256.
-    Returns (key, salt). If salt is provided it will be reused.
-    """
     if salt is None:
         salt = os.urandom(16)
     kdf = PBKDF2HMAC(
@@ -38,35 +33,39 @@ def derive_key(password: str, salt: bytes = None, iterations: int = 200_000) -> 
 
 
 def aesgcm_encrypt(plaintext: bytes, key: bytes) -> bytes:
-    """
-    Encrypt plaintext (bytes) with AES-GCM and return base64-encoded payload as bytes.
-    Payload format: base64(nonce || ciphertext)
-    """
     aesgcm = AESGCM(key)
     nonce = os.urandom(12)
     ct = aesgcm.encrypt(nonce, plaintext, None)
     return base64.b64encode(nonce + ct)
 
 
-def aesgcm_decrypt(b64_payload: Union[str, bytes], key: bytes) -> bytes:
-    """
-    Decrypt base64 payload (bytes or str) produced by aesgcm_encrypt and return plaintext bytes.
-    Raises exception if decryption/authentication fails.
-    """
-    if isinstance(b64_payload, str):
-        b64_payload = b64_payload.encode("utf-8")
-    payload = base64.b64decode(b64_payload)
-    nonce = payload[:12]
-    ct = payload[12:]
+def aesgcm_decrypt(payload: Union[str, bytes], key: bytes) -> bytes:
+    # pastikan payload dalam bentuk bytes
+    if isinstance(payload, memoryview):
+        payload = bytes(payload)
+    if isinstance(payload, bytearray):
+        payload = bytes(payload)
+    if isinstance(payload, str):
+        # ketika DB/driver mengembalikan string, gunakan latin1 untuk
+        # menjaga nilai byte 0-255 tanpa perubahan
+        payload = payload.encode("latin1")
+
+    # payload sekarang adalah base64(nonce||ciphertext) dalam bentuk bytes
+    try:
+        raw = base64.b64decode(payload)
+    except Exception as e:
+        raise ValueError(f"payload bukan base64 valid: {e}")
+
+    if len(raw) < 12:
+        raise ValueError("payload terlalu pendek untuk berisi nonce")
+
+    nonce = raw[:12]
+    ct = raw[12:]
     aesgcm = AESGCM(key)
     return aesgcm.decrypt(nonce, ct, None)
 
 
 def init_db() -> None:
-    """
-    Create database (if missing) and required tables.
-    """
-    # create database if not exists
     conn = mysql.connector.connect(
         host=MYSQL_CONFIG["host"],
         user=MYSQL_CONFIG["user"],
@@ -84,7 +83,6 @@ def init_db() -> None:
             pass
         conn.close()
 
-    # create tables inside the database
     conn = mysql.connector.connect(**MYSQL_CONFIG)
     try:
         c = conn.cursor()
@@ -106,7 +104,6 @@ def init_db() -> None:
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # tambahan: tabel stego terpisah (opsional, tetapi aman jika ingin pemisahan)
         c.execute("""
             CREATE TABLE IF NOT EXISTS stego (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -128,18 +125,15 @@ def init_db() -> None:
 
 def save_encrypted_message(sender: str, receiver: str, content: bytes, key: bytes,
                            msg_type: str = 'text', filename: str = None) -> None:
-    """
-    Encrypt content (bytes) using AES-GCM and store into messages table.
-    ciphertext is stored as base64 bytes (so it is portable).
-    """
-    encrypted_b64 = aesgcm_encrypt(content, key)  # returns bytes (base64-encoded)
+    encrypted_b64 = aesgcm_encrypt(content, key)  # bytes (base64)
     conn = mysql.connector.connect(**MYSQL_CONFIG)
     try:
         c = conn.cursor()
+        # pastikan kita menyimpan sebagai BLOB
         c.execute("""
             INSERT INTO messages (sender, receiver, message, msg_type, filename)
             VALUES (%s, %s, %s, %s, %s)
-        """, (sender, receiver, encrypted_b64, msg_type, filename))
+        """, (sender, receiver, mysql.connector.Binary(encrypted_b64), msg_type, filename))
         conn.commit()
     finally:
         try:
@@ -150,22 +144,16 @@ def save_encrypted_message(sender: str, receiver: str, content: bytes, key: byte
 
 
 def read_messages_for_user(username: str, key: bytes) -> List[Dict[str, Any]]:
-    """
-    Read all messages for `username`, decrypt them with `key` and return list of dicts:
-    {
-        "sender": ...,
-        "msg_type": 'text'|'file'|'image',
-        "content": bytes (for file/image) or str (for text),
-        "filename": optional,
-        "timestamp": ...
-    }
-    If decryption fails, content will be bytes with an error message.
-    """
     conn = mysql.connector.connect(**MYSQL_CONFIG)
     rows = []
     try:
         c = conn.cursor()
-        c.execute("SELECT sender, msg_type, message, filename, timestamp FROM messages WHERE receiver=%s ORDER BY id ASC", (username,))
+        c.execute("""
+            SELECT id, sender, msg_type, message, filename, timestamp
+            FROM messages
+            WHERE receiver=%s
+            ORDER BY id ASC
+        """, (username,))
         rows = c.fetchall()
     finally:
         try:
@@ -175,43 +163,43 @@ def read_messages_for_user(username: str, key: bytes) -> List[Dict[str, Any]]:
         conn.close()
 
     hasil: List[Dict[str, Any]] = []
-    for sender, msg_type, ciphertext, filename, timestamp in rows:
+
+    for msg_id, sender, msg_type, ciphertext, filename, timestamp in rows:
         try:
-            # ciphertext may be bytes or str from DB; aesgcm_decrypt accepts both
+            # pastikan ciphertext adalah bytes, tidak memoryview/str
+            if isinstance(ciphertext, memoryview):
+                ciphertext = bytes(ciphertext)
+            if isinstance(ciphertext, bytearray):
+                ciphertext = bytes(ciphertext)
+            # ciphertext may also be str (rare) — aesgcm_decrypt will handle str by encoding
             plaintext = aesgcm_decrypt(ciphertext, key)
-            # For text messages, try decode to utf-8 str; if fails, keep bytes
+
             if msg_type == 'text':
                 try:
                     content = plaintext.decode("utf-8")
                 except UnicodeDecodeError:
                     content = plaintext.decode("latin1", errors="replace")
             else:
-                content = plaintext  # keep bytes for files/images
+                content = plaintext
+
             hasil.append({
+                "id": msg_id,
                 "sender": sender,
                 "msg_type": msg_type,
                 "content": content,
                 "filename": filename,
                 "timestamp": timestamp
             })
+
         except Exception as e:
-            # return an informative bytes payload for failed decryptions
-            err_bytes = f"[DECRYPTION_FAILED: {e}]".encode("utf-8")
-            if msg_type == 'text':
-                # preserve the error as a string for text consumers
-                hasil.append({
-                    "sender": sender,
-                    "msg_type": msg_type,
-                    "content": err_bytes.decode("utf-8", errors="replace"),
-                    "filename": filename,
-                    "timestamp": timestamp
-                })
-            else:
-                hasil.append({
-                    "sender": sender,
-                    "msg_type": msg_type,
-                    "content": err_bytes,
-                    "filename": filename,
-                    "timestamp": timestamp
-                })
+            err_text = f"[DECRYPTION_FAILED: {e}]"
+            hasil.append({
+                "id": msg_id,
+                "sender": sender,
+                "msg_type": msg_type,
+                "content": err_text if msg_type == 'text' else err_text.encode(),
+                "filename": filename,
+                "timestamp": timestamp
+            })
+
     return hasil

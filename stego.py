@@ -1,7 +1,7 @@
 from PIL import Image
 import os
 
-TERMINATOR = '11111111111111101111111111111110'  # lebih panjang agar aman
+TERMINATOR = "~~~END~~~"  # lebih panjang agar aman
 
 def encode_lsb(image_path, message, output_path="hasil_stego.bmp"):
     """
@@ -12,7 +12,7 @@ def encode_lsb(image_path, message, output_path="hasil_stego.bmp"):
 
     # ubah pesan menjadi biner
     msg_bytes = message.encode("utf-8") if isinstance(message, str) else bytes(message)
-    binary = ''.join(f'{b:08b}' for b in msg_bytes) + TERMINATOR
+    binary = ''.join(f'{ord(c):08b}' for c in message + TERMINATOR)
 
     if len(binary) > w * h * 3:
         img.close()
@@ -54,24 +54,28 @@ def encode_lsb(image_path, message, output_path="hasil_stego.bmp"):
 
     return new_output
 
-def decode_lsb(image_path):
-    img = Image.open(image_path).convert("RGB")
+def decode_lsb(path):
+    img = Image.open(path).convert("RGB")
     w, h = img.size
     pixels = img.load()
     bits = []
+
     for y in range(h):
         for x in range(w):
             r, g, b = pixels[x, y]
-            bits.append(str(r & 1))
-            bits.append(str(g & 1))
-            bits.append(str(b & 1))
-            if len(bits) >= len(TERMINATOR) and ''.join(bits[-len(TERMINATOR):]) == TERMINATOR:
-                binary = ''.join(bits[:-len(TERMINATOR)])
-                img.close()
-                data = bytearray(int(binary[i:i+8], 2) for i in range(0, len(binary), 8))
-                try:
-                    return data.decode('utf-8')
-                except UnicodeDecodeError:
-                    return data.decode('latin1')
+            bits += [str(r & 1), str(g & 1), str(b & 1)]
+
     img.close()
-    return ""
+
+    # ubah bits ke char
+    chars = []
+    for i in range(0, len(bits), 8):
+        byte = int("".join(bits[i:i+8]), 2)
+        chars.append(chr(byte))
+
+    text = "".join(chars)
+
+    if TERMINATOR not in text:
+        return ""
+
+    return text.split(TERMINATOR)[0]

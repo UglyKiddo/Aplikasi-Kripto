@@ -2,50 +2,59 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>📥 Pesan Masuk</title>
+    <title>Pesan Masuk</title>
     <style>
-        body {
-            background: #121212;
-            color: #eee;
-            font-family: Arial, sans-serif;
-            padding: 40px;
+        body { background: #121212; color: #eee; font-family: Arial; padding: 40px; }
+        .card { background: #1f1f1f; padding: 25px; border-radius: 10px; max-width: 700px; margin: auto; }
+        .msg { padding: 10px 0; border-bottom: 1px solid #333; }
+        a { color: #90caf9; text-decoration: none; }
+        select, button {
+            padding: 8px;
+            border-radius: 6px;
+            border: none;
+            margin: 10px 0;
+            width: 100%;
         }
-        .card {
-            background: #1f1f1f;
-            padding: 20px;
-            border-radius: 10px;
-            margin: auto;
-            max-width: 600px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        button {
+            background: #2196f3;
+            color: white;
+            cursor: pointer;
         }
-        .msg {
-            border-bottom: 1px solid #333;
-            padding: 10px 0;
-        }
-        a {
-            color: #90caf9;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
+        button:hover {
+            background: #1976d2;
         }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>📥 Pesan Masuk - {{ username }}</h2>
-        <a href="{{ url_for('home') }}">⬅️ Kembali ke Beranda</a>
+        <h2>Pesan Masuk</h2>
+
+        <a href="{{ url_for('home') }}">Kembali</a>
         <hr>
 
-        {% if rows %}
-            {% for sender, msg in rows %}
-                <div class="msg">
-                    <strong>{{ sender }}</strong><br>
-                    <pre style="white-space: pre-wrap;">{{ msg }}</pre>
-                </div>
+        <form method="get" action="{{ url_for('inbox') }}">
+            <label>Pilih Pengirim:</label>
+            <select name="from">
+                <option value="">Semua</option>
+                {% for u in senders %}
+                    <option value="{{ u }}" {% if request.args.get('from') == u %}selected{% endif %}>{{ u }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Tampilkan</button>
+        </form>
+
+        <hr>
+
+        {% if messages %}
+            {% for m in messages %}
+            <div class="msg">
+                <strong>{{ m.sender }}</strong><br>
+                <small>{{ m.timestamp }}</small>
+                <pre style="white-space: pre-wrap;">{{ m.content }}</pre>
+            </div>
             {% endfor %}
         {% else %}
-            <p>Tidak ada pesan masuk.</p>
+            <p>Tidak ada pesan.</p>
         {% endif %}
     </div>
 </body>
