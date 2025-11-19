@@ -8,3 +8,6 @@ install pycryptodome
 3. how to run
 python main.py (di terminal)
 
+4. openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes (di cmd atau powershell di folder projek)
+
+
