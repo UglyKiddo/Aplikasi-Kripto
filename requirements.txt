@@ -1,4 +1,3 @@
-streamlit==1.28.0
-mysql-connector-python==8.1.0
-Pillow==10.1.0
-cryptography==41.0.3
+streamlit==1.29.0  # Specify a version for stability; check compatibility
+mysql-connector-python==9.1.0
+pillow==10.4.0
